@@ -1,0 +1,26 @@
+# Core dependencies (required)
+fastapi
+uvicorn[standard]
+sqlmodel
+python-jose[cryptography]
+passlib[argon2]
+argon2-cffi
+pydantic
+pydantic-settings
+httpx
+Pillow
+pytest
+python-multipart
+python-dotenv
+
+# ML/AI dependencies (optional - only needed for local LLM/image generation)
+# Note: torch, transformers, diffusers, accelerate require Python 3.8-3.12
+# For Python 3.13+, use Ollama mode (LLM_MODE=ollama) - no Python packages needed!
+# Just install Ollama: brew install ollama && ollama serve && ollama pull mistral
+# 
+# Uncomment below if using Python 3.8-3.12 and want transformers-based local ML:
+# transformers
+# torch
+# diffusers
+# accelerate
+

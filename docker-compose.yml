@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pantrywizard-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./pantry.db
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - LLM_MODE=${LLM_MODE:-api}
+      - LLM_API_URL=${LLM_API_URL:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - IMAGE_MODE=${IMAGE_MODE:-placeholder}
+      - USE_CUDA=false
+    volumes:
+      - ./backend:/app
+      - ./backend/pantry.db:/app/pantry.db
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - pantrywizard-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: pantrywizard-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_MOCK_MODE=false
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+    networks:
+      - pantrywizard-network
+
+networks:
+  pantrywizard-network:
+    driver: bridge
+
