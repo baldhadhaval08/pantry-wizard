@@ -42,7 +42,7 @@ export default function RecipeCard({ recipe, imageUrl, onSave, onCooked, onRegen
               alt={recipe.name}
               className="w-full h-full object-cover"
               onError={(e) => {
-                e.currentTarget.src = 'https://via.placeholder.com/400x200?text=Recipe+Image'
+                e.currentTarget.src = 'http://localhost:8000/static/images/placeholder.jpg'
               }}
             />
           </div>

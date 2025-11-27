@@ -50,37 +50,50 @@ class OllamaLLMClient(LLMClient):
             print(f"  ollama pull {self.model_name}")
     
     def generate_recipe(self, prompt: str) -> str:
-        """Generate recipe using Ollama."""
+        """Fast streaming recipe generation using Ollama."""
         try:
             payload = {
                 "model": self.model_name,
                 "prompt": prompt,
-                "stream": False,
+                "stream": True,
                 "options": {
                     "temperature": 0.7,
                     "top_p": 0.9,
                 }
             }
-            
-            response = httpx.post(
-                f"{self.base_url}/api/generate",
-                json=payload,
-                timeout=120.0
-            )
-            response.raise_for_status()
-            data = response.json()
-            
-            # Extract response text
-            response_text = data.get("response", "")
-            
-            # Extract JSON from response
-            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-            if json_match:
-                return json_match.group(0)
-            return response_text
+
+            # Start streaming request
+            with httpx.Client(timeout=None) as client:
+                response = client.post(
+                    f"{self.base_url}/api/generate",
+                    json=payload
+                )
+                response.raise_for_status()
+
+                full_text = ""
+
+                # Stream chunks line by line
+                for line in response.iter_lines():
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                        if "response" in data:
+                            full_text += data["response"]
+                    except json.JSONDecodeError:
+                        continue
+
+                # Extract valid JSON
+                json_match = re.search(r"\{.*\}", full_text, re.DOTALL)
+                if json_match:
+                    return json_match.group(0)
+
+                return full_text
+
         except Exception as e:
             print(f"Error generating with Ollama: {e}")
             return self._fallback_recipe()
+
     
     def _fallback_recipe(self) -> str:
         """Fallback recipe if Ollama fails."""
