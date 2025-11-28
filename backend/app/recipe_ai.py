@@ -1,8 +1,7 @@
-"""AI recipe generation using local or API-based LLMs."""
+"""AI recipe generation using Ollama."""
 import json
 import re
 from typing import List, Optional, Dict, Any
-from abc import ABC, abstractmethod
 from difflib import SequenceMatcher
 import httpx
 from app.config import settings
@@ -11,17 +10,8 @@ from app.schemas import RecipeResponse
 from app.utils import calculate_bmi
 
 
-class LLMClient(ABC):
-    """Abstract base class for LLM clients."""
-    
-    @abstractmethod
-    def generate_recipe(self, prompt: str) -> str:
-        """Generate recipe text from prompt."""
-        pass
-
-
-class OllamaLLMClient(LLMClient):
-    """Local LLM client using Ollama (works with Python 3.13+)."""
+class OllamaLLMClient:
+    """LLM client using Ollama (works with Python 3.13+)."""
     
     def __init__(self):
         self.base_url = settings.OLLAMA_BASE_URL
@@ -115,185 +105,9 @@ class OllamaLLMClient(LLMClient):
         })
 
 
-class LocalLLMClient(LLMClient):
-    """Local LLM client using transformers (requires Python 3.8-3.12)."""
-    
-    def __init__(self):
-        self.model = None
-        self.tokenizer = None
-        self._load_model()
-    
-    def _load_model(self):
-        """Load local transformer model."""
-        try:
-            from transformers import AutoTokenizer, AutoModelForCausalLM
-            import torch
-            
-            device = "cuda" if settings.USE_CUDA and torch.cuda.is_available() else "cpu"
-            model_path = settings.LLM_MODEL_PATH or settings.LLM_MODEL_NAME
-            
-            print(f"Loading local model from {model_path} on {device}...")
-            self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-            self.model = AutoModelForCausalLM.from_pretrained(
-                model_path,
-                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                device_map="auto" if device == "cuda" else None
-            )
-            if device == "cpu":
-                self.model = self.model.to(device)
-            self.model.eval()
-            print("Local model loaded successfully")
-        except ImportError as e:
-            print(f"⚠️  Transformers/PyTorch not available: {e}")
-            print("💡 Tip: Use 'ollama' mode instead (works with Python 3.13+)")
-            print("   Set LLM_MODE=ollama in your .env file")
-            self.model = None
-        except Exception as e:
-            print(f"Error loading local model: {e}")
-            print("Falling back to placeholder mode")
-            self.model = None
-    
-    def generate_recipe(self, prompt: str) -> str:
-        """Generate recipe using local model."""
-        if self.model is None or self.tokenizer is None:
-            return self._fallback_recipe()
-        
-        try:
-            import torch
-            
-            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
-            device = next(self.model.parameters()).device
-            inputs = {k: v.to(device) for k, v in inputs.items()}
-            
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=1024,
-                    temperature=0.7,
-                    do_sample=True,
-                    pad_token_id=self.tokenizer.eos_token_id
-                )
-            
-            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            # Extract JSON from response
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                return json_match.group(0)
-            return response
-        except Exception as e:
-            print(f"Error generating with local model: {e}")
-            return self._fallback_recipe()
-    
-    def _fallback_recipe(self) -> str:
-        """Fallback recipe if model fails."""
-        return json.dumps({
-            "name": "Simple Pantry Stir-Fry",
-            "description": "A quick and healthy stir-fry using your available ingredients.",
-            "ingredients": [{"name": "mixed vegetables", "amount": "2 cups"}],
-            "steps": [
-                "Heat oil in a pan",
-                "Add vegetables and stir-fry for 5 minutes",
-                "Season with salt and pepper",
-                "Serve hot"
-            ],
-            "time_minutes": 15,
-            "difficulty": "easy",
-            "calories": 200,
-            "macros": {"protein_g": 10, "carbs_g": 30, "fat_g": 5},
-            "health_justification": "A balanced meal with vegetables providing essential nutrients."
-        })
-
-
-class APILLMClient(LLMClient):
-    """API-based LLM client (OpenAI/OpenRouter/Anthropic)."""
-    
-    def generate_recipe(self, prompt: str) -> str:
-        """Generate recipe using API."""
-        if not settings.LLM_API_URL or not settings.LLM_API_KEY:
-            return self._fallback_recipe()
-        
-        try:
-            # Try OpenAI-compatible API
-            headers = {
-                "Authorization": f"Bearer {settings.LLM_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            
-            # Determine API format
-            if "openai" in settings.LLM_API_URL.lower() or "openrouter" in settings.LLM_API_URL.lower():
-                payload = {
-                    "model": "gpt-3.5-turbo",
-                    "messages": [
-                        {"role": "system", "content": "You are a health-focused chef AI. Output only valid JSON."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": 0.7,
-                    "max_tokens": 1024
-                }
-            else:
-                # Generic API format
-                payload = {
-                    "prompt": prompt,
-                    "max_tokens": 1024,
-                    "temperature": 0.7
-                }
-            
-            with httpx.Client(timeout=30.0) as client:
-                response = client.post(
-                    settings.LLM_API_URL,
-                    headers=headers,
-                    json=payload
-                )
-                response.raise_for_status()
-                data = response.json()
-                
-                # Extract content from response
-                if "choices" in data and len(data["choices"]) > 0:
-                    content = data["choices"][0].get("message", {}).get("content", "")
-                elif "text" in data:
-                    content = data["text"]
-                elif "content" in data:
-                    content = data["content"]
-                else:
-                    content = str(data)
-                
-                # Extract JSON from content
-                json_match = re.search(r'\{.*\}', content, re.DOTALL)
-                if json_match:
-                    return json_match.group(0)
-                return content
-        except Exception as e:
-            print(f"Error calling API: {e}")
-            return self._fallback_recipe()
-    
-    def _fallback_recipe(self) -> str:
-        """Fallback recipe if API fails."""
-        return json.dumps({
-            "name": "Healthy Pantry Bowl",
-            "description": "A nutritious bowl made from your available ingredients.",
-            "ingredients": [{"name": "available ingredients", "amount": "as needed"}],
-            "steps": [
-                "Prepare your ingredients",
-                "Combine in a bowl",
-                "Season to taste",
-                "Enjoy!"
-            ],
-            "time_minutes": 20,
-            "difficulty": "easy",
-            "calories": 250,
-            "macros": {"protein_g": 15, "carbs_g": 35, "fat_g": 8},
-            "health_justification": "A balanced meal using fresh ingredients from your pantry."
-        })
-
-
-def get_llm_client() -> LLMClient:
-    """Get appropriate LLM client based on configuration."""
-    if settings.LLM_MODE == "ollama":
-        return OllamaLLMClient()
-    elif settings.LLM_MODE == "local":
-        return LocalLLMClient()
-    else:
-        return APILLMClient()
+def get_llm_client() -> OllamaLLMClient:
+    """Get Ollama LLM client."""
+    return OllamaLLMClient()
 
 
 def build_recipe_prompt(

@@ -70,31 +70,69 @@ ollama serve
 
 Leave this terminal open. Ollama will run on `http://localhost:11434`
 
-### Step 4: Download an AI Model
+### Step 4: Download AI Models
 
-In your **main terminal** (not the one running `ollama serve`), download a model:
+In your **main terminal** (not the one running `ollama serve`), download models:
 
+**For Recipe Text Generation (Required):**
 ```bash
-# Recommended: Mistral (4.1GB, fast, good quality)
+# Recommended: Llama 3.1 (8B, excellent quality)
+ollama pull llama3.1:8b-instruct-q4_K_M
+
+# Alternative: Mistral (4.1GB, fast, good quality)
 ollama pull mistral
 
 # This will take a few minutes depending on your internet speed
 # You'll see progress as it downloads
 ```
 
-**Alternative models:**
+**For Image Generation (Optional - Easy with Ollama!):**
 ```bash
-ollama pull llama2        # Alternative (3.8GB)
-ollama pull phi           # Smaller, faster (1.6GB)
-ollama pull codellama     # Code-focused (3.8GB)
+# Pull an image generation model (same Ollama service!)
+ollama pull abedalswaity7/flux-prompt:latest
+
+# Note: This is a prompt enhancement model. For actual image generation,
+# you may need a different model or use placeholder mode.
 ```
 
-**Verify model is installed:**
+**Verify models are installed:**
 ```bash
 ollama list
 ```
 
-You should see `mistral` (or your chosen model) in the list.
+You should see your chosen model(s) in the list.
+
+### Step 4b: Setup Image Generation (Optional - Super Easy!)
+
+**Great news!** You can use the **same Ollama service** for images - no need to clone other repos!
+
+**Using Ollama for Images (Recommended - Simplest Option!):**
+
+1. **Pull an image generation model** (in your main terminal, same one running Ollama):
+   ```bash
+   # Pull the flux-prompt model
+   ollama pull abedalswaity7/flux-prompt:latest
+   
+   # Note: This model enhances prompts but may not generate images directly.
+   # The app will use placeholder images if image generation isn't available.
+   ```
+
+2. **Configure backend `.env`:**
+   ```env
+   IMAGE_MODE=ollama
+   OLLAMA_IMAGE_MODEL=flux
+   ```
+
+That's it! **No separate repos, no extra Python environments** - just use Ollama for both text and images!
+
+**Verify it's installed:**
+```bash
+ollama list
+```
+
+You should see both your text model (llama3.1) and image model (flux) in the list.
+
+**Note:** If you skip image generation, the app uses placeholder images (still fully functional!). But with Ollama, it's so easy - just one command!
 
 ### Step 5: Backend Setup
 
@@ -151,13 +189,14 @@ JWT_SECRET=your-secret-key-change-in-production-$(openssl rand -hex 32)
 JWT_ALGORITHM=HS256
 JWT_EXPIRATION_HOURS=24
 
-# LLM Configuration - Using Ollama for local AI
-LLM_MODE=ollama
+# Ollama Configuration (for text generation)
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=mistral
+OLLAMA_MODEL=llama3.1:8b-instruct-q4_K_M
 
 # Image Generation
-IMAGE_MODE=placeholder
+# Options: "ollama" (recommended) or "placeholder" (no images)
+IMAGE_MODE=ollama
+OLLAMA_IMAGE_MODEL=abedalswaity7/flux-prompt:latest
 
 # CORS
 CORS_ORIGINS=["http://localhost:3000","http://localhost:3001"]
@@ -289,47 +328,40 @@ Should return a JSON list of available models.
 
 ## Configuration Options
 
-### LLM Modes
+### Ollama Configuration
 
-**Ollama Mode (Recommended - Default):**
-- Works with Python 3.13+
-- No Python ML packages needed
-- Fast and easy setup
-- Configure in `.env`:
-  ```env
-  LLM_MODE=ollama
-  OLLAMA_BASE_URL=http://localhost:11434
-  OLLAMA_MODEL=mistral
-  ```
+PantryWizard+ uses **Ollama exclusively** for both text and image generation. This keeps the setup simple and works perfectly with Python 3.13+.
 
-**API Mode:**
-- Works with any Python version
-- Requires API key
-- Configure in `.env`:
-  ```env
-  LLM_MODE=api
-  LLM_API_URL=https://api.openai.com/v1/chat/completions
-  LLM_API_KEY=your-api-key-here
-  ```
-
-**Local Transformers Mode (Python 3.8-3.12 only):**
-- Requires PyTorch (not available for Python 3.13+)
-- Uncomment ML packages in `requirements.txt`
-- Configure in `.env`:
-  ```env
-  LLM_MODE=local
-  LLM_MODEL_NAME=mistralai/Mistral-7B-Instruct-v0.2
-  ```
-
-### Available Ollama Models
-
-- `mistral` - Best balance (4.1GB) ⭐ Recommended
+**Text Generation Models:**
+- `llama3.1:8b-instruct-q4_K_M` - Excellent quality (4.7GB) ⭐ Recommended
+- `mistral` - Best balance (4.1GB)
 - `llama2` - Good alternative (3.8GB)
 - `phi` - Smaller, faster (1.6GB)
-- `codellama` - Code-focused (3.8GB)
-- `neural-chat` - Conversational (4.1GB)
 
-See all models: https://ollama.com/library
+**Image Generation Models:**
+- `abedalswaity7/flux-prompt:latest` - Prompt enhancement model
+- Note: For actual image generation, you may need different models or use placeholder mode
+
+**Configure in `.env`:**
+```env
+# Text generation
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.1:8b-instruct-q4_K_M
+
+# Image generation
+IMAGE_MODE=ollama
+OLLAMA_IMAGE_MODEL=abedalswaity7/flux-prompt:latest
+```
+
+**Placeholder Mode (No Images):**
+If you don't want to generate images, set:
+```env
+IMAGE_MODE=placeholder
+```
+
+The app works perfectly without images - they're optional!
+
+See all available models: https://ollama.com/library
 
 ---
 
@@ -421,8 +453,8 @@ curl http://localhost:11434/api/tags
 
 **Slow recipe generation:**
 - Use a smaller model: `ollama pull phi`
-- Or use API mode with a faster service
 - Check your system resources (CPU/RAM)
+- Make sure Ollama is running: `ollama serve`
 
 ### General Issues
 
@@ -438,7 +470,8 @@ curl http://localhost:11434/api/tags
 **Recipe generation fails:**
 - Check Ollama is running: `curl http://localhost:11434/api/tags`
 - Check backend logs for errors
-- Try API mode as fallback
+- Verify model is installed: `ollama list`
+- Pull the model if missing: `ollama pull llama3.1:8b-instruct-q4_K_M`
 
 ---
 
